@@ -1,7 +1,7 @@
 # Project: Language Metaverse MVP (Phase 1 - Hollywood Boulevard)
 
 ## Tech Stack
-*   **Frontend:** React Native / Expo (Mobile First)
+*   **Frontend:** React Native / Expo SDK 52 (Mobile First). Use `expo-audio` (STRICTLY NO `expo-av`).
 *   **Backend:** Node.js / Express (Proxy Layer for API Keys)
 *   **Database:** Supabase (PostgreSQL with pgvector)
 *   **AI/Audio APIs:** OpenAI (GPT-4o mini or Claude 3.5 Sonnet), ElevenLabs (TTS), Whisper (STT)
@@ -9,7 +9,8 @@
 ## Architectural Constraints
 *   **Backend Isolation:** All LLM and API calls MUST happen in the Node.js backend to protect API keys. The Expo frontend only communicates with our backend proxy.
 *   **Component Structure:** Strictly adhere to this tree for React Native:
-    *   `/src/screens/GameScreen.tsx` (360 background container)
+    *   `/src/screens/GameScreen.tsx` (Main layout)
+    *   `/src/components/Environment360Viewer.tsx` (Handles interactive 360-degree pano tiles)
     *   `/src/components/NPCAvatar.tsx` 
     *   `/src/components/PushToTalkButton.tsx` (Handle idle, recording, processing states)
     *   `/src/components/TranscriptOverlay.tsx`
@@ -25,3 +26,4 @@
 *   **NPC Persona:** The AI is "Mickey," an exaggerated, fast-talking Hollywood talent scout. 
 *   **Prompt Injection:** The system prompt must dynamically inject `{user.estimated_level}` and `{vocabulary_memory.words}` from the database before calling the LLM. Responses must be < 3 sentences and naturally correct grammar mistakes.
 *   **Safety Restrictions:** STRICTLY sandbox the AI to prevent NSFW content. NEVER use real celebrity names or likenesses.
+*   **Security:** NEVER hardcode API keys in the frontend or backend code. Always use `process.env` and ensure `.env` remains in `.gitignore`.

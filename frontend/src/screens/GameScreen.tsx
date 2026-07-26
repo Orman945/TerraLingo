@@ -1,16 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, ImageBackground, SafeAreaView, StyleSheet, View } from "react-native";
+import { Alert, SafeAreaView, StyleSheet, View } from "react-native";
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import Environment360Viewer from "../components/Environment360Viewer";
 import NPCAvatar from "../components/NPCAvatar";
 import PushToTalkButton from "../components/PushToTalkButton";
 import TranscriptOverlay, { type TranscriptLine } from "../components/TranscriptOverlay";
 import type { ChatResponse } from "../services/api";
 
 /**
- * Phase 1 game screen: static 360 panorama placeholder for Hollywood
- * Boulevard. A real 360 viewer (e.g. panorama sphere) will replace this
- * ImageBackground once the asset pipeline is in place.
+ * Stand-in equirectangular panorama until the Hollywood Boulevard tiles are
+ * authored. Swap for the real asset (or a `require(...)`) when it lands.
  */
+const PLACEHOLDER_PANORAMA = "https://mpyxitycdnblwbhrdmue.supabase.co/storage/v1/object/public/360-environments/Ascheberg_Kirchplatz_Panorama.jpg";
+
+/** Phase 1 game screen: interactive 360 environment with Mickey on top. */
 export default function GameScreen() {
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
@@ -66,21 +69,16 @@ export default function GameScreen() {
   }, []);
 
   return (
-    <ImageBackground
-      source={{
-        uri: "https://placehold.co/1600x900/4a3a2a/FFD700?text=Hollywood+Boulevard+360+Placeholder",
-      }}
-      style={styles.background}
-      resizeMode="cover"
-    >
-      <SafeAreaView style={styles.overlay}>
-        <View style={styles.topArea}>
+    <Environment360Viewer imageUrl={PLACEHOLDER_PANORAMA} style={styles.background}>
+      {/* box-none so drags between the HUD elements still pan the panorama. */}
+      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
+        <View style={styles.topArea} pointerEvents="box-none">
           <NPCAvatar name="Mickey" />
         </View>
 
-        <View style={styles.bottomArea}>
+        <View style={styles.bottomArea} pointerEvents="box-none">
           <TranscriptOverlay lines={transcriptLines} isNpcSpeaking={isNpcSpeaking} />
-          <View style={styles.controlsRow}>
+          <View style={styles.controlsRow} pointerEvents="box-none">
             <PushToTalkButton
               userId="00000000-0000-0000-0000-000000000000"
               onResult={handleChatResult}
@@ -90,7 +88,7 @@ export default function GameScreen() {
           </View>
         </View>
       </SafeAreaView>
-    </ImageBackground>
+    </Environment360Viewer>
   );
 }
 
