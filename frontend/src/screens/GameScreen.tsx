@@ -38,24 +38,39 @@ export default function GameScreen() {
 
       releasePlayer();
 
-      // The phone's physical silent switch would otherwise mute Mickey.
-      await setAudioModeAsync({ playsInSilentMode: true });
+      try {
+        // The phone's physical silent switch would otherwise mute Mickey.
+        await setAudioModeAsync({ playsInSilentMode: true });
 
-      const player = createAudioPlayer(result.npc_audio_url);
-      playerRef.current = player;
-      setIsNpcSpeaking(true);
+        const player = createAudioPlayer(result.npc_audio_url);
+        playerRef.current = player;
+        setIsNpcSpeaking(true);
 
-      const subscription = player.addListener("playbackStatusUpdate", (status) => {
-        if (!status.didJustFinish) return;
-        subscription.remove();
+        const stopSpeaking = () => {
+          subscription.remove();
+          setIsNpcSpeaking(false);
+          if (playerRef.current === player) {
+            player.remove();
+            playerRef.current = null;
+          }
+        };
+
+        const subscription = player.addListener("playbackStatusUpdate", (status) => {
+          if (status.error) {
+            console.warn("Mickey's voice failed to play:", status.error);
+            stopSpeaking();
+            return;
+          }
+          if (!status.didJustFinish) return;
+          stopSpeaking();
+        });
+
+        player.play();
+      } catch (error) {
+        console.warn("Mickey's voice failed to play:", error);
         setIsNpcSpeaking(false);
-        if (playerRef.current === player) {
-          player.remove();
-          playerRef.current = null;
-        }
-      });
-
-      player.play();
+        releasePlayer();
+      }
     },
     [releasePlayer]
   );

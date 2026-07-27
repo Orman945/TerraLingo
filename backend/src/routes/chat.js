@@ -32,7 +32,8 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
       vocabularyWords,
     });
 
-    const npc_audio_url = await synthesizeSpeech(npc_reply_text, npc_id);
+    const requestBaseUrl = `${req.protocol}://${req.get("host")}`;
+    const npc_audio_url = await synthesizeSpeech(npc_reply_text, npc_id, requestBaseUrl);
 
     await Promise.all([
       saveConversationTurn({ userId: user_id, npcId: npc_id, transcript, npcReplyText: npc_reply_text }),

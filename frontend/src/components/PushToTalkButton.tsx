@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   AudioModule,
   RecordingPresets,
@@ -40,6 +40,39 @@ export default function PushToTalkButton({
 }: PushToTalkButtonProps) {
   const [state, setState] = useState<PushToTalkState>("idle");
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Driven imperatively (rather than tied to `state` in the render tree) so
+  // the loop is guaranteed to stop/reset exactly once per state transition,
+  // instead of racing a re-render that leaves a stray loop running.
+  useEffect(() => {
+    if (state === "processing") {
+      pulseAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        })
+      );
+      pulseLoopRef.current = loop;
+      loop.start();
+    } else {
+      pulseLoopRef.current?.stop();
+      pulseLoopRef.current = null;
+      pulseAnim.setValue(0);
+    }
+
+    return () => {
+      pulseLoopRef.current?.stop();
+      pulseLoopRef.current = null;
+    };
+  }, [state, pulseAnim]);
+
+  const pulseScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
+  const pulseOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
 
   // Tracks whether the button is physically held, independent of `state`,
   // so an async permission/prepare step can be aborted if the finger lifts
@@ -114,21 +147,38 @@ export default function PushToTalkButton({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        activeOpacity={0.8}
-        disabled={disabled || state === "processing"}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[
-          styles.button,
-          { backgroundColor: disabled ? "#5A5A5A" : STATE_COLOR[state] },
-          disabled && styles.buttonDisabled,
-        ]}
-      >
-        <Text style={styles.buttonLabel}>
-          {disabled ? "Mickey is talking..." : STATE_LABEL[state]}
-        </Text>
-      </TouchableOpacity>
+      {state === "processing" && (
+        <Text style={styles.thinkingLabel}>Mickey is thinking...</Text>
+      )}
+      <View style={styles.buttonWrapper}>
+        {state === "processing" && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.pulseRing,
+              {
+                opacity: pulseOpacity,
+                transform: [{ scale: pulseScale }],
+              },
+            ]}
+          />
+        )}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          disabled={disabled || state === "processing"}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          style={[
+            styles.button,
+            { backgroundColor: disabled ? "#5A5A5A" : STATE_COLOR[state] },
+            disabled && styles.buttonDisabled,
+          ]}
+        >
+          <Text style={styles.buttonLabel}>
+            {disabled ? "Mickey is talking..." : STATE_LABEL[state]}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -136,6 +186,12 @@ export default function PushToTalkButton({
 const styles = StyleSheet.create({
   container: {
     alignItems: "center",
+  },
+  buttonWrapper: {
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
   },
   button: {
     width: 120,
@@ -158,5 +214,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingHorizontal: 8,
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: "#9E9E9E",
+  },
+  thinkingLabel: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+    fontStyle: "italic",
+    marginBottom: 8,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 });

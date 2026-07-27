@@ -6,7 +6,6 @@ const path = require("path");
 const { randomUUID } = require("crypto");
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "http://localhost:3000";
 
 // "Liam" — energetic, confident young American voice; closest premade match
 // to a fast-talking Hollywood talent scout. Override per-NPC via env if more
@@ -15,7 +14,7 @@ const DEFAULT_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID || "TX3LPaxmHKx
 
 const AUDIO_DIR = path.join(__dirname, "..", "..", "public", "audio");
 
-async function synthesizeSpeech(text, npcId) {
+async function synthesizeSpeech(text, npcId, requestBaseUrl) {
   const voiceId = process.env[`ELEVENLABS_VOICE_ID_${npcId.toUpperCase()}`] || DEFAULT_VOICE_ID;
 
   const response = await fetch(
@@ -44,7 +43,11 @@ async function synthesizeSpeech(text, npcId) {
   const fileName = `${npcId}-${randomUUID()}.mp3`;
   await fs.writeFile(path.join(AUDIO_DIR, fileName), audioBuffer);
 
-  return `${PUBLIC_BASE_URL}/audio/${fileName}`;
+  // PUBLIC_BASE_URL is only for forcing a specific public host (production,
+  // tunnels); local/LAN dev derives it from the request the phone already
+  // reached us on, so there's no IP to keep hand-synced with the network.
+  const baseUrl = process.env.PUBLIC_BASE_URL || requestBaseUrl;
+  return `${baseUrl}/audio/${fileName}`;
 }
 
 module.exports = { synthesizeSpeech };

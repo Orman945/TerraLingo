@@ -1,10 +1,10 @@
 # Project: Language Metaverse MVP (Phase 1 - Hollywood Boulevard)
 
 ## Tech Stack
-*   **Frontend:** React Native / Expo SDK 52 (Mobile First). Use `expo-audio` (STRICTLY NO `expo-av`).
+*   **Frontend:** React Native / Expo SDK 57 (Mobile First). Use `expo-audio` (STRICTLY NO `expo-av`).
 *   **Backend:** Node.js / Express (Proxy Layer for API Keys)
 *   **Database:** Supabase (PostgreSQL with pgvector)
-*   **AI/Audio APIs:** OpenAI (GPT-4o mini or Claude 3.5 Sonnet), ElevenLabs (TTS), Whisper (STT)
+*   **AI/Audio APIs:** OpenAI GPT-4o mini (NPC dialogue) + Whisper (STT), ElevenLabs (TTS)
 
 ## Architectural Constraints
 *   **Backend Isolation:** All LLM and API calls MUST happen in the Node.js backend to protect API keys. The Expo frontend only communicates with our backend proxy.
@@ -16,6 +16,7 @@
     *   `/src/components/TranscriptOverlay.tsx`
     *   `/src/services/api.ts`
 *   **Database Schema:** Supabase tables (`users`, `conversations`, `vocabulary_memory`) must use UUIDs for primary keys. `vocabulary_memory` requires pgvector for embedding storage.
+*   **360 Viewer:** `Environment360Viewer` renders panoramas via Photo Sphere Viewer (three.js) run inside a `WebView` (native) / sandboxed `<iframe>` (web) — `react-native-webview` has no web implementation, so the web path can't use it. Do NOT use `expo-gl` + `@react-three/fiber` instead: their `expo-gl` version pins mismatch on SDK 57 and break on physical devices. The web iframe's `sandbox` MUST include `allow-same-origin` alongside `allow-scripts` — without it the frame gets a null origin and WebGL context creation throws, which Photo Sphere Viewer swallows silently (looks like an infinite load/timeout, not a crash).
 
 ## API Data Contracts
 *   **Endpoint:** `POST /api/chat`
