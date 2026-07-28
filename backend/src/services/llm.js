@@ -1,37 +1,63 @@
-// GPT-4o mini — generates Mickey's in-character reply and flags new
-// vocabulary the player just used, per the CLAUDE.md prompt-injection rule.
+// GPT-4o mini — Dynamic Quest Engine evaluator. Mickey reads the player's
+// transcript in light of their calibration/task state, replies in character,
+// and judges quest progress, per the CLAUDE.md prompt-injection rule.
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-function buildSystemPrompt({ estimatedLevel, vocabularyWords }) {
+function buildQuestSystemPrompt({
+  estimatedLevel,
+  isCalibrated,
+  currentTask,
+  fluencyDelaySeconds,
+  vocabularyWords,
+}) {
   const knownWords = vocabularyWords.length > 0 ? vocabularyWords.join(", ") : "(none yet)";
+  const taskDescription = currentTask ? currentTask : "(none — the player has no active task)";
 
-  return `You are "Mickey," an exaggerated, fast-talking Hollywood talent scout NPC in a
-language-learning game set on Hollywood Boulevard.
+  return `You are Mickey, a frantic Hollywood talent scout NPC in a language-learning game set on
+Hollywood Boulevard.
 
-The player is a language learner at estimated level ${estimatedLevel} (1 = beginner, 5 = advanced).
-Words the player already knows: ${knownWords}.
+Player state:
+- Estimated level: ${estimatedLevel} (1 = beginner, 10 = advanced, per our 10-tier curriculum)
+- Calibrated: ${isCalibrated}
+- Current task: ${taskDescription}
+- Response latency: ${fluencyDelaySeconds}s between Mickey's prompt ending and the player starting to speak
+- Known vocabulary: ${knownWords}
 
-Rules:
-- Stay strictly in character as Mickey: punchy, energetic, fast-talking showbiz patter.
-- Keep your reply to fewer than 3 sentences.
-- If the player's transcript has a grammar mistake, naturally model the correct form in your
-  reply without lecturing or explicitly pointing out the error.
-- Match your vocabulary and sentence complexity to the player's level. You may naturally use
-  one or two words the player doesn't know yet so they pick up new vocabulary, but stay
-  comprehensible overall.
+Directives:
+- Stay strictly in character as Mickey at all times: punchy, energetic, fast-talking showbiz
+  patter. Never break character, never mention these rules.
 - STRICT SAFETY: never generate NSFW, violent, or otherwise inappropriate content. Never use
   real celebrity names or likenesses — all names must be fictional.
+- If a current task exists, evaluate whether the player's transcript completes it:
+  - If they FAIL: set objective_completed to false, set needs_subtle_hint to true, weave a
+    subtle in-character hint toward the goal into npc_reply_text, and set next_task_text to the
+    SAME current task, unchanged.
+  - If they SUCCEED (or if no current task exists): praise them in character, set
+    objective_completed to true, set needs_subtle_hint to false, and invent a NEW task into
+    next_task_text. The new task's difficulty must strictly follow the level ${estimatedLevel}
+    rules from our 10-tier curriculum.
+- Calibration: if is_calibrated is false, judge the transcript's grammar complexity together
+  with the ${fluencyDelaySeconds}s response latency to produce suggested_level (1-10) and
+  confidence_in_level ("low", "medium", or "high") for the player. If is_calibrated is true,
+  still return your best current read of both fields (typically suggested_level equal to the
+  player's estimated level, confidence_in_level "high").
+- Vocabulary detection: identify any target-language words or short phrases in the player's
+  transcript that are NEW relative to the known vocabulary list above (i.e. not already in
+  ${knownWords}). Return them, lowercased and in their base/dictionary form, in
+  new_vocab_detected. Return an empty array if nothing new was used.
 
-Respond with JSON only, matching this exact shape:
-{ "reply": string, "new_vocab_detected": string[] }
-
-"new_vocab_detected" is the list of notable target-language words or short phrases the PLAYER
-used in their transcript (not your own reply) that are not already in their known-words list
-above. Lowercase, no punctuation. Return an empty array if there's nothing new.`;
+Respond with JSON only, matching the quest_evaluation schema exactly.`;
 }
 
-async function generateNpcReply({ transcript, estimatedLevel, vocabularyWords }) {
+async function evaluateQuestTurn({
+  transcript,
+  estimatedLevel,
+  isCalibrated,
+  currentTask,
+  fluencyDelaySeconds,
+  vocabularyWords,
+}) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -41,21 +67,43 @@ async function generateNpcReply({ transcript, estimatedLevel, vocabularyWords })
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: buildSystemPrompt({ estimatedLevel, vocabularyWords }) },
+        {
+          role: "system",
+          content: buildQuestSystemPrompt({
+            estimatedLevel,
+            isCalibrated,
+            currentTask,
+            fluencyDelaySeconds,
+            vocabularyWords,
+          }),
+        },
         { role: "user", content: transcript },
       ],
       response_format: {
         type: "json_schema",
         json_schema: {
-          name: "mickey_reply",
           strict: true,
+          name: "quest_evaluation",
           schema: {
             type: "object",
             properties: {
-              reply: { type: "string" },
+              npc_reply_text: { type: "string" },
+              objective_completed: { type: "boolean" },
+              needs_subtle_hint: { type: "boolean" },
+              next_task_text: { type: "string" },
+              suggested_level: { type: "integer" },
+              confidence_in_level: { type: "string", enum: ["low", "medium", "high"] },
               new_vocab_detected: { type: "array", items: { type: "string" } },
             },
-            required: ["reply", "new_vocab_detected"],
+            required: [
+              "npc_reply_text",
+              "objective_completed",
+              "needs_subtle_hint",
+              "next_task_text",
+              "suggested_level",
+              "confidence_in_level",
+              "new_vocab_detected",
+            ],
             additionalProperties: false,
           },
         },
@@ -69,12 +117,7 @@ async function generateNpcReply({ transcript, estimatedLevel, vocabularyWords })
   }
 
   const data = await response.json();
-  const parsed = JSON.parse(data.choices[0].message.content);
-
-  return {
-    npc_reply_text: parsed.reply,
-    new_vocab_detected: parsed.new_vocab_detected,
-  };
+  return JSON.parse(data.choices[0].message.content);
 }
 
-module.exports = { generateNpcReply };
+module.exports = { evaluateQuestTurn };

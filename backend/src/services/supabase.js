@@ -74,6 +74,46 @@ async function getUserContext(userId) {
   };
 }
 
+// Fetches full quest-engine user state (xp, level, calibration flag, active
+// task) plus known vocabulary. Returns null if no user row exists for
+// userId. Used by the /api/chat route to validate/log state ahead of the
+// Dynamic Quest Engine's prompt-injection step.
+async function getUserQuestState(userId) {
+  await ensureDemoUser(userId);
+
+  const [users, vocab] = await Promise.all([
+    supabaseRequest(
+      `users?id=eq.${userId}&select=xp,estimated_level,is_calibrated,current_task,consecutive_fails`
+    ),
+    supabaseRequest(
+      `vocabulary_memory?user_id=eq.${userId}&select=word&order=encounter_count.desc&limit=50`
+    ),
+  ]);
+
+  if (users.length === 0) return null;
+
+  return {
+    xp: users[0].xp,
+    estimatedLevel: users[0].estimated_level,
+    isCalibrated: users[0].is_calibrated,
+    currentTask: users[0].current_task,
+    consecutiveFails: users[0].consecutive_fails,
+    vocabularyWords: vocab.map((row) => row.word),
+  };
+}
+
+// Applies the Dynamic Quest Engine's per-turn progression writes (task
+// advance, calibration, struggle-drop) to the users row in a single PATCH.
+// XP goes through increment_user_xp() instead (see incrementUserXp) since it
+// must stay atomic against the concurrent per-turn XP increment in chat.js.
+async function updateUserQuestState(userId, updates) {
+  await supabaseRequest(`users?id=eq.${userId}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(updates),
+  });
+}
+
 // Persists one conversation turn (user transcript + Mickey's reply) as two
 // rows in `conversations`.
 async function saveConversationTurn({ userId, npcId, transcript, npcReplyText }) {
@@ -135,6 +175,8 @@ async function incrementUserXp(userId, amount) {
 module.exports = {
   DEMO_USER_ID,
   getUserContext,
+  getUserQuestState,
+  updateUserQuestState,
   saveConversationTurn,
   recordVocabulary,
   getUserXp,
