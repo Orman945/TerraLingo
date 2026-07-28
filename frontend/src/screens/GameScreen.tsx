@@ -5,7 +5,14 @@ import Environment360Viewer from "../components/Environment360Viewer";
 import NPCAvatar from "../components/NPCAvatar";
 import PushToTalkButton from "../components/PushToTalkButton";
 import TranscriptOverlay, { type TranscriptLine } from "../components/TranscriptOverlay";
-import type { ChatResponse } from "../services/api";
+import XPProgressBar from "../components/XPProgressBar";
+import { fetchUserXp, type ChatResponse } from "../services/api";
+
+/** Phase 1 placeholder level threshold until a real leveling system exists. */
+const MAX_XP = 500;
+
+/** No auth/onboarding yet — every session acts as this fixed demo user. */
+const DEMO_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
  * Stand-in equirectangular panorama until the Hollywood Boulevard tiles are
@@ -17,6 +24,7 @@ const PLACEHOLDER_PANORAMA = "https://mpyxitycdnblwbhrdmue.supabase.co/storage/v
 export default function GameScreen() {
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
+  const [xp, setXp] = useState(0);
   const playerRef = useRef<AudioPlayer | null>(null);
 
   // Playback status updates fire from native, so the "just finished" check
@@ -28,6 +36,24 @@ export default function GameScreen() {
 
   useEffect(() => releasePlayer, [releasePlayer]);
 
+  // Backend is the source of truth for XP; hydrate the bar with the user's
+  // persisted total instead of starting every session back at zero.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchUserXp(DEMO_USER_ID)
+      .then((total) => {
+        if (!cancelled) setXp(total);
+      })
+      .catch((error) => {
+        console.warn("Failed to fetch initial XP:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleChatResult = useCallback(
     async (result: ChatResponse) => {
       setTranscriptLines((lines) => [
@@ -35,6 +61,12 @@ export default function GameScreen() {
         { speaker: "user", text: result.transcript },
         { speaker: "npc", text: result.npc_reply_text },
       ]);
+      // The backend already persisted +50 XP for this turn as a side effect
+      // of /api/chat; re-fetch the total rather than guessing the delta
+      // client-side, so the bar always reflects the real database value.
+      fetchUserXp(DEMO_USER_ID).then(setXp).catch((error) => {
+        console.warn("Failed to refresh XP:", error);
+      });
 
       releasePlayer();
 
@@ -87,15 +119,18 @@ export default function GameScreen() {
     <Environment360Viewer imageUrl={PLACEHOLDER_PANORAMA} style={styles.background}>
       {/* box-none so drags between the HUD elements still pan the panorama. */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <View style={styles.topArea} pointerEvents="box-none">
-          <NPCAvatar name="Mickey" />
+        <View style={styles.headerArea} pointerEvents="box-none">
+          <XPProgressBar currentXP={xp} maxXP={MAX_XP} />
+          <View style={styles.topArea} pointerEvents="box-none">
+            <NPCAvatar name="Mickey" />
+          </View>
         </View>
 
         <View style={styles.bottomArea} pointerEvents="box-none">
           <TranscriptOverlay lines={transcriptLines} isNpcSpeaking={isNpcSpeaking} />
           <View style={styles.controlsRow} pointerEvents="box-none">
             <PushToTalkButton
-              userId="00000000-0000-0000-0000-000000000000"
+              userId={DEMO_USER_ID}
               onResult={handleChatResult}
               onError={handleVoiceError}
               disabled={isNpcSpeaking}
@@ -117,6 +152,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "space-between",
     padding: 16,
+  },
+  headerArea: {
+    width: "100%",
   },
   topArea: {
     alignItems: "center",

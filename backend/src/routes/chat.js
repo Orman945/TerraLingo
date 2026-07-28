@@ -4,10 +4,13 @@ const multer = require("multer");
 const { transcribeAudio } = require("../services/whisper");
 const { generateNpcReply } = require("../services/llm");
 const { synthesizeSpeech } = require("../services/elevenlabs");
-const { getUserContext, saveConversationTurn, recordVocabulary } = require("../services/supabase");
+const { getUserContext, saveConversationTurn, recordVocabulary, incrementUserXp } = require("../services/supabase");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// XP awarded per completed chat turn (transcribed, replied to, and voiced).
+const XP_PER_CHAT_TURN = 50;
 
 // POST /api/chat
 // multipart/form-data: user_id, npc_id, audio_file
@@ -39,6 +42,13 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
       saveConversationTurn({ userId: user_id, npcId: npc_id, transcript, npcReplyText: npc_reply_text }),
       recordVocabulary({ userId: user_id, words: new_vocab_detected }),
     ]);
+
+    // Best-effort: XP is a gamification side effect and must never block
+    // Mickey's reply if it fails (e.g. the increment_user_xp RPC/migration
+    // isn't applied yet in this environment).
+    incrementUserXp(user_id, XP_PER_CHAT_TURN).catch((err) => {
+      console.error("incrementUserXp failed (non-fatal):", err);
+    });
 
     return res.status(200).json({
       transcript,

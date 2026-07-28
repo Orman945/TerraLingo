@@ -111,4 +111,32 @@ async function recordVocabulary({ userId, words }) {
   }
 }
 
-module.exports = { DEMO_USER_ID, getUserContext, saveConversationTurn, recordVocabulary };
+// Fetches the user's persisted XP total (used to initialize the frontend's
+// XPProgressBar on mount).
+async function getUserXp(userId) {
+  await ensureDemoUser(userId);
+
+  const users = await supabaseRequest(`users?id=eq.${userId}&select=xp`);
+  return users[0]?.xp ?? 0;
+}
+
+// Atomically increments the user's XP via the increment_user_xp() RPC
+// (see supabase/migrations/0002_add_users_xp.sql) so concurrent chat turns
+// can't clobber each other the way a read-then-PATCH would.
+async function incrementUserXp(userId, amount) {
+  await ensureDemoUser(userId);
+
+  return supabaseRequest("rpc/increment_user_xp", {
+    method: "POST",
+    body: JSON.stringify({ p_user_id: userId, p_xp_amount: amount }),
+  });
+}
+
+module.exports = {
+  DEMO_USER_ID,
+  getUserContext,
+  saveConversationTurn,
+  recordVocabulary,
+  getUserXp,
+  incrementUserXp,
+};

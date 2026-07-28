@@ -35,3 +35,14 @@ export async function sendChatAudio(
 
   return response.json();
 }
+
+export async function fetchUserXp(userId: string): Promise<number> {
+  const response = await fetch(`${API_BASE_URL}/api/users/${userId}/xp`);
+
+  if (!response.ok) {
+    throw new Error(`Fetch XP failed: ${response.status}`);
+  }
+
+  const data: { xp: number } = await response.json();
+  return data.xp;
+}
