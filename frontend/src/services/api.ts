@@ -11,18 +11,24 @@ export interface ChatResponse {
   npc_reply_text: string;
   npc_audio_url: string;
   new_vocab_detected: string[];
+  objective_completed: boolean;
+  needs_subtle_hint: boolean;
+  next_task_text: string;
+  show_level_unlocked: number | null;
 }
 
 export async function sendChatAudio(
   userId: string,
   npcId: string,
   audioFile: Blob,
+  fluencyDelaySeconds: number,
   fileName = "recording.m4a"
 ): Promise<ChatResponse> {
   const formData = new FormData();
   formData.append("user_id", userId);
   formData.append("npc_id", npcId);
   formData.append("audio_file", audioFile, fileName);
+  formData.append("fluency_delay_seconds", String(fluencyDelaySeconds));
 
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",

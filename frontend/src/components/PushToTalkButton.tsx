@@ -16,6 +16,10 @@ interface PushToTalkButtonProps {
   npcId?: string;
   onResult?: (result: ChatResponse) => void;
   onError?: (error: unknown) => void;
+  /** Fired the instant recording actually starts, so the caller can stamp the fluency delay. */
+  onRecordingStart?: () => void;
+  /** Read at submit time (not a prop value) so the latest delay is used even though it's set well after render. */
+  fluencyDelaySecondsRef?: React.MutableRefObject<number>;
   disabled?: boolean;
 }
 
@@ -36,6 +40,8 @@ export default function PushToTalkButton({
   npcId = "mickey",
   onResult,
   onError,
+  onRecordingStart,
+  fluencyDelaySecondsRef,
   disabled = false,
 }: PushToTalkButtonProps) {
   const [state, setState] = useState<PushToTalkState>("idle");
@@ -116,11 +122,12 @@ export default function PushToTalkButton({
 
       recorder.record();
       setState("recording");
+      onRecordingStart?.();
     } catch (error) {
       isHeldRef.current = false;
       onError?.(error);
     }
-  }, [disabled, onError, recorder, state]);
+  }, [disabled, onError, onRecordingStart, recorder, state]);
 
   const handlePressOut = useCallback(async () => {
     isHeldRef.current = false;
@@ -136,14 +143,15 @@ export default function PushToTalkButton({
 
       const audioBlob = await (await fetch(uri)).blob();
       const fileName = uri.split("/").pop() || "recording.m4a";
-      const result = await sendChatAudio(userId, npcId, audioBlob, fileName);
+      const fluencyDelaySeconds = fluencyDelaySecondsRef?.current ?? 0;
+      const result = await sendChatAudio(userId, npcId, audioBlob, fluencyDelaySeconds, fileName);
       onResult?.(result);
     } catch (error) {
       onError?.(error);
     } finally {
       setState("idle");
     }
-  }, [npcId, onError, onResult, recorder, state, userId]);
+  }, [fluencyDelaySecondsRef, npcId, onError, onResult, recorder, state, userId]);
 
   return (
     <View style={styles.container}>

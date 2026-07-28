@@ -32,6 +32,14 @@ export default function GameScreen() {
   const [currentTask, setCurrentTask] = useState(PLACEHOLDER_TASK);
   const playerRef = useRef<AudioPlayer | null>(null);
 
+  // Fluency stopwatch: stamped when Mickey's TTS finishes, read back when the
+  // user starts recording their reply. A ref (not state) because neither side
+  // of this needs to trigger a re-render.
+  const audioFinishedTimeRef = useRef<number | null>(null);
+  // Holds the most recently computed delay so PushToTalkButton can read the
+  // latest value at submit time without waiting on a prop update round-trip.
+  const fluencyDelaySecondsRef = useRef(0);
+
   // Playback status updates fire from native, so the "just finished" check
   // has to happen inside the listener rather than a setTimeout/duration guess.
   const releasePlayer = useCallback(() => {
@@ -61,11 +69,14 @@ export default function GameScreen() {
 
   const handleChatResult = useCallback(
     async (result: ChatResponse) => {
+      console.log("[GameScreen] /api/chat response:", result);
+
       setTranscriptLines((lines) => [
         ...lines,
         { speaker: "user", text: result.transcript },
         { speaker: "npc", text: result.npc_reply_text },
       ]);
+      setCurrentTask(result.next_task_text);
       // The backend already persisted +50 XP for this turn as a side effect
       // of /api/chat; re-fetch the total rather than guessing the delta
       // client-side, so the bar always reflects the real database value.
@@ -86,6 +97,7 @@ export default function GameScreen() {
         const stopSpeaking = () => {
           subscription.remove();
           setIsNpcSpeaking(false);
+          audioFinishedTimeRef.current = Date.now();
           if (playerRef.current === player) {
             player.remove();
             playerRef.current = null;
@@ -106,11 +118,22 @@ export default function GameScreen() {
       } catch (error) {
         console.warn("Mickey's voice failed to play:", error);
         setIsNpcSpeaking(false);
+        audioFinishedTimeRef.current = Date.now();
         releasePlayer();
       }
     },
     [releasePlayer]
   );
+
+  // Fires the instant the mic actually starts recording (after permission +
+  // prepare succeed), so the delay reflects real "how long did the user
+  // pause" time rather than including async setup overhead.
+  const handleRecordingStart = useCallback(() => {
+    const finishedAt = audioFinishedTimeRef.current;
+    const delaySeconds = finishedAt !== null ? (Date.now() - finishedAt) / 1000 : 0;
+    fluencyDelaySecondsRef.current = delaySeconds;
+    console.log("[GameScreen] fluencyDelaySeconds:", delaySeconds);
+  }, []);
 
   const handleVoiceError = useCallback((error: unknown) => {
     console.warn("PushToTalkButton error:", error);
@@ -139,6 +162,8 @@ export default function GameScreen() {
               userId={DEMO_USER_ID}
               onResult={handleChatResult}
               onError={handleVoiceError}
+              onRecordingStart={handleRecordingStart}
+              fluencyDelaySecondsRef={fluencyDelaySecondsRef}
               disabled={isNpcSpeaking}
             />
           </View>
