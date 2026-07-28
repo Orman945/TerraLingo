@@ -3,6 +3,7 @@ import { Alert, SafeAreaView, StyleSheet, View } from "react-native";
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import Environment360Viewer from "../components/Environment360Viewer";
 import NPCAvatar from "../components/NPCAvatar";
+import ObjectiveHUD from "../components/ObjectiveHUD";
 import PushToTalkButton from "../components/PushToTalkButton";
 import TranscriptOverlay, { type TranscriptLine } from "../components/TranscriptOverlay";
 import XPProgressBar from "../components/XPProgressBar";
@@ -13,6 +14,9 @@ const MAX_XP = 500;
 
 /** No auth/onboarding yet — every session acts as this fixed demo user. */
 const DEMO_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+/** Shown until the user's real `current_task` is fetched from the backend. */
+const PLACEHOLDER_TASK = "Task: Introduce yourself to Mickey!";
 
 /**
  * Stand-in equirectangular panorama until the Hollywood Boulevard tiles are
@@ -25,6 +29,7 @@ export default function GameScreen() {
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
   const [xp, setXp] = useState(0);
+  const [currentTask, setCurrentTask] = useState(PLACEHOLDER_TASK);
   const playerRef = useRef<AudioPlayer | null>(null);
 
   // Playback status updates fire from native, so the "just finished" check
@@ -122,7 +127,8 @@ export default function GameScreen() {
         <View style={styles.headerArea} pointerEvents="box-none">
           <XPProgressBar currentXP={xp} maxXP={MAX_XP} />
           <View style={styles.topArea} pointerEvents="box-none">
-            <NPCAvatar name="Mickey" />
+            <NPCAvatar name="Mickey" isSpeaking={isNpcSpeaking} />
+            <ObjectiveHUD taskText={currentTask} />
           </View>
         </View>
 
@@ -157,8 +163,10 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   topArea: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 24,
+    gap: 12,
+    marginTop: 16,
   },
   bottomArea: {
     gap: 16,
