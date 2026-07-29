@@ -37,6 +37,9 @@ Directives:
     objective_completed to true, set needs_subtle_hint to false, and invent a NEW task into
     next_task_text. The new task's difficulty must strictly follow the level ${estimatedLevel}
     rules from our 10-tier curriculum.
+  - CRITICAL RULE: If the user answers correctly and you acknowledge it in your dialogue, you
+    MUST set objective_completed: true and you MUST invent a completely new next_task_text. Do
+    NOT keep the old task.
 - Calibration: if is_calibrated is false, judge the transcript's grammar complexity together
   with the ${fluencyDelaySeconds}s response latency to produce suggested_level (1-10) and
   confidence_in_level ("low", "medium", or "high") for the player. If is_calibrated is true,

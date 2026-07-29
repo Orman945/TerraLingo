@@ -15,14 +15,15 @@ const {
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// XP awarded per completed chat turn (transcribed, replied to, and voiced).
-const XP_PER_CHAT_TURN = 50;
-// XP bonus for completing the active quest objective.
-const QUEST_COMPLETION_XP = 150;
+// XP awarded when the player answers correctly (objective_completed).
+const QUEST_COMPLETION_XP = 100;
+// XP required to advance one estimated_level tier.
+const XP_PER_LEVEL = 750;
 // Struggle Drop: after this many consecutive failed objectives, back off the
 // player's estimated_level by one tier and reset the streak.
 const MAX_CONSECUTIVE_FAILS = 3;
 const MIN_ESTIMATED_LEVEL = 1;
+const MAX_ESTIMATED_LEVEL = 10;
 
 // POST /api/chat
 // multipart/form-data: user_id, npc_id, audio_file, fluency_delay_seconds
@@ -87,13 +88,6 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
 
     await saveConversationTurn({ userId: user_id, npcId: npc_id, transcript, npcReplyText: npc_reply_text });
 
-    // Best-effort: XP is a gamification side effect and must never block
-    // Mickey's reply if it fails (e.g. the increment_user_xp RPC/migration
-    // isn't applied yet in this environment).
-    incrementUserXp(user_id, XP_PER_CHAT_TURN).catch((err) => {
-      console.error("incrementUserXp failed (non-fatal):", err);
-    });
-
     if (new_vocab_detected.length > 0) {
       recordVocabulary({ userId: user_id, words: new_vocab_detected }).catch((err) => {
         console.error("recordVocabulary failed (non-fatal):", err);
@@ -104,11 +98,17 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
     // struggle-drop state ahead of responding, per CLAUDE.md's rules.
     const questStateUpdates = {};
     let show_level_unlocked;
+    let newXpTotal;
 
     if (objective_completed) {
       questStateUpdates.current_task = next_task_text;
       questStateUpdates.consecutive_fails = 0;
-      await incrementUserXp(user_id, QUEST_COMPLETION_XP);
+
+      try {
+        newXpTotal = await incrementUserXp(user_id, QUEST_COMPLETION_XP);
+      } catch (err) {
+        console.error("incrementUserXp failed (non-fatal):", err);
+      }
     } else {
       const newConsecutiveFails = userState.consecutiveFails + 1;
       if (newConsecutiveFails >= MAX_CONSECUTIVE_FAILS) {
@@ -119,6 +119,16 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
         );
       } else {
         questStateUpdates.consecutive_fails = newConsecutiveFails;
+      }
+    }
+
+    if (newXpTotal !== undefined && newXpTotal >= XP_PER_LEVEL) {
+      await incrementUserXp(user_id, -XP_PER_LEVEL);
+
+      if (userState.estimatedLevel < MAX_ESTIMATED_LEVEL) {
+        const newLevel = Math.min(MAX_ESTIMATED_LEVEL, userState.estimatedLevel + 1);
+        questStateUpdates.estimated_level = newLevel;
+        show_level_unlocked = newLevel;
       }
     }
 
