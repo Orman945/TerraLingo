@@ -25,6 +25,15 @@ const MAX_CONSECUTIVE_FAILS = 3;
 const MIN_ESTIMATED_LEVEL = 1;
 const MAX_ESTIMATED_LEVEL = 10;
 
+// Guarantees next_task_text reads as an unambiguous instruction even if the
+// model drifts from the "Task: " prefix mandated in the system prompt —
+// OpenAI's strict structured-outputs mode enforces types/required/enum, not
+// string content, so this is a deterministic safety net rather than trusting
+// the model alone.
+function normalizeTaskText(taskText) {
+  return /^task:\s/i.test(taskText) ? taskText : `Task: ${taskText}`;
+}
+
 // POST /api/chat
 // multipart/form-data: user_id, npc_id, audio_file, fluency_delay_seconds
 router.post("/chat", upload.single("audio_file"), async (req, res) => {
@@ -60,6 +69,11 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
 
     const transcript = await transcribeAudio(audioFile.buffer, audioFile.mimetype);
 
+    // Struggle Drop: if this attempt fails too, it'll be the 3rd consecutive
+    // fail — tell the LLM up front so it generates a fresh, easier task
+    // instead of repeating the one that just tripped the player up.
+    const isFinalStruggleAttempt = userState.consecutiveFails + 1 >= MAX_CONSECUTIVE_FAILS;
+
     const evaluation = await evaluateQuestTurn({
       transcript,
       estimatedLevel: userState.estimatedLevel,
@@ -67,6 +81,7 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
       currentTask: userState.currentTask,
       fluencyDelaySeconds: fluency_delay_seconds,
       vocabularyWords: userState.vocabularyWords,
+      isFinalStruggleAttempt,
     });
 
     console.log("AI Evaluation:", evaluation);
@@ -75,11 +90,11 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
       npc_reply_text,
       objective_completed,
       needs_subtle_hint,
-      next_task_text,
       suggested_level,
       confidence_in_level,
       new_vocab_detected,
     } = evaluation;
+    const next_task_text = normalizeTaskText(evaluation.next_task_text);
 
     console.log("New vocab detected:", new_vocab_detected);
 
@@ -117,6 +132,10 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
           MIN_ESTIMATED_LEVEL,
           userState.estimatedLevel - 1
         );
+        // isFinalStruggleAttempt told the LLM to invent a new, easier task
+        // for this exact turn — persist it instead of leaving the player
+        // stuck on the task that just got them demoted.
+        questStateUpdates.current_task = next_task_text;
       } else {
         questStateUpdates.consecutive_fails = newConsecutiveFails;
       }
