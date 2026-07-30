@@ -25,6 +25,9 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 export default function XPProgressBar({ currentXP, maxXP, level }: XPProgressBarProps) {
   const safeMaxXP = Math.max(maxXP, 1);
   const percentage = Math.min(100, Math.max(0, (currentXP / safeMaxXP) * 100));
+  // Guards against a transient fetch race (or a future API shape change)
+  // leaving `level` undefined — that would otherwise render as "NaN".
+  const safeLevel = Number.isFinite(level) ? Math.round(level) : 1;
 
   const animatedPercent = useRef(new Animated.Value(0)).current;
 
@@ -87,7 +90,7 @@ export default function XPProgressBar({ currentXP, maxXP, level }: XPProgressBar
           />
         </Svg>
         <View style={styles.badgeCore}>
-          <Text style={styles.badgeLevel}>{Math.round(level)}</Text>
+          <Text style={styles.badgeLevel}>{safeLevel}</Text>
           <Text style={styles.badgeCaption}>LVL</Text>
         </View>
       </View>
