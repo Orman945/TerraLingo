@@ -30,6 +30,7 @@ export default function GameScreen() {
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
   const [xp, setXp] = useState(0);
+  const [level, setLevel] = useState(1);
   const [currentTask, setCurrentTask] = useState(PLACEHOLDER_TASK);
   const [unlockedLevel, setUnlockedLevel] = useState<number | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
@@ -57,8 +58,11 @@ export default function GameScreen() {
     let cancelled = false;
 
     fetchUserXp(DEMO_USER_ID)
-      .then((total) => {
-        if (!cancelled) setXp(total);
+      .then((progress) => {
+        if (!cancelled) {
+          setXp(progress.xp);
+          setLevel(progress.level);
+        }
       })
       .catch((error) => {
         console.warn("Failed to fetch initial XP:", error);
@@ -83,9 +87,14 @@ export default function GameScreen() {
       // answer was correct) as a side effect of /api/chat; re-fetch the total
       // rather than guessing the delta client-side, so the bar always
       // reflects the real database value.
-      fetchUserXp(DEMO_USER_ID).then(setXp).catch((error) => {
-        console.warn("Failed to refresh XP:", error);
-      });
+      fetchUserXp(DEMO_USER_ID)
+        .then((progress) => {
+          setXp(progress.xp);
+          setLevel(progress.level);
+        })
+        .catch((error) => {
+          console.warn("Failed to refresh XP:", error);
+        });
 
       if (result.show_level_unlocked != null) {
         setUnlockedLevel(result.show_level_unlocked);
@@ -155,7 +164,7 @@ export default function GameScreen() {
       {/* box-none so drags between the HUD elements still pan the panorama. */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.headerArea} pointerEvents="box-none">
-          <XPProgressBar currentXP={xp} maxXP={MAX_XP} />
+          <XPProgressBar currentXP={xp} maxXP={MAX_XP} level={level} />
           <View style={styles.topArea} pointerEvents="box-none">
             <NPCAvatar name="Mickey" isSpeaking={isNpcSpeaking} />
             <ObjectiveHUD taskText={currentTask} />

@@ -4,6 +4,7 @@ const multer = require("multer");
 const { transcribeAudio } = require("../services/whisper");
 const { evaluateQuestTurn } = require("../services/llm");
 const { synthesizeSpeech } = require("../services/elevenlabs");
+const { getCurriculumTier } = require("../services/curriculum");
 const {
   getUserQuestState,
   updateUserQuestState,
@@ -25,13 +26,36 @@ const MAX_CONSECUTIVE_FAILS = 3;
 const MIN_ESTIMATED_LEVEL = 1;
 const MAX_ESTIMATED_LEVEL = 10;
 
+// Pedagogical Rule (CLAUDE.md): the brain cannot retain naked vocabulary, so
+// next_task_text may NEVER reduce to a single isolated word. Checks the
+// quoted phrase (the exact words the player must say, e.g. Say "sword") when
+// present, since that's where the isolated-word failure mode actually shows
+// up — falls back to checking the whole remaining text otherwise.
+function isSingleWordTask(taskWithoutPrefix) {
+  const quotedMatch = taskWithoutPrefix.match(/["“]([^"”]+)["”]/);
+  const content = quotedMatch ? quotedMatch[1] : taskWithoutPrefix;
+  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+  return wordCount <= 1;
+}
+
 // Guarantees next_task_text reads as an unambiguous instruction even if the
 // model drifts from the "Task: " prefix mandated in the system prompt —
 // OpenAI's strict structured-outputs mode enforces types/required/enum, not
 // string content, so this is a deterministic safety net rather than trusting
-// the model alone.
-function normalizeTaskText(taskText) {
-  return /^task:\s/i.test(taskText) ? taskText : `Task: ${taskText}`;
+// the model alone. Also enforces the "no isolated word" pedagogical rule the
+// same way, since prose instructions alone don't stop gpt-4o-mini from
+// occasionally drifting back to single-word tasks.
+function normalizeTaskText(taskText, estimatedLevel) {
+  const withoutPrefix = /^task:\s/i.test(taskText) ? taskText.replace(/^task:\s/i, "") : taskText;
+
+  if (isSingleWordTask(withoutPrefix)) {
+    console.warn(
+      `normalizeTaskText: model returned a single-word task ("${taskText}") — falling back to curriculum example.`
+    );
+    return `Task: ${getCurriculumTier(estimatedLevel).example}`;
+  }
+
+  return `Task: ${withoutPrefix}`;
 }
 
 // POST /api/chat
@@ -94,7 +118,16 @@ router.post("/chat", upload.single("audio_file"), async (req, res) => {
       confidence_in_level,
       new_vocab_detected,
     } = evaluation;
-    const next_task_text = normalizeTaskText(evaluation.next_task_text);
+    // The Struggle Drop directive only asks the LLM for an EASIER new task
+    // when this attempt is both the 3rd consecutive fail AND actually failed
+    // (a fail that keeps the same task, or a success, targets the current
+    // tier) — the fallback level must match whichever tier the prompt
+    // actually asked for, so it stays consistent with the LLM's directive.
+    const fallbackTaskLevel =
+      isFinalStruggleAttempt && !objective_completed
+        ? Math.max(MIN_ESTIMATED_LEVEL, userState.estimatedLevel - 1)
+        : userState.estimatedLevel;
+    const next_task_text = normalizeTaskText(evaluation.next_task_text, fallbackTaskLevel);
 
     console.log("New vocab detected:", new_vocab_detected);
 

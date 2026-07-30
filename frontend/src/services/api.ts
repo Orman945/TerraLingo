@@ -42,13 +42,17 @@ export async function sendChatAudio(
   return response.json();
 }
 
-export async function fetchUserXp(userId: string): Promise<number> {
+export interface UserProgress {
+  xp: number;
+  level: number;
+}
+
+export async function fetchUserXp(userId: string): Promise<UserProgress> {
   const response = await fetch(`${API_BASE_URL}/api/users/${userId}/xp`);
 
   if (!response.ok) {
     throw new Error(`Fetch XP failed: ${response.status}`);
   }
 
-  const data: { xp: number } = await response.json();
-  return data.xp;
+  return response.json();
 }

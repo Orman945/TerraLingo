@@ -2,7 +2,7 @@
 // transcript in light of their calibration/task state, replies in character,
 // and judges quest progress, per the CLAUDE.md prompt-injection rule.
 
-const { getCurriculumTier } = require("./curriculum");
+const { getCurriculumTier, getCurriculumRule } = require("./curriculum");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -17,20 +17,24 @@ function buildQuestSystemPrompt({
   const knownWords = vocabularyWords.length > 0 ? vocabularyWords.join(", ") : "(none yet)";
   const taskDescription = currentTask ? currentTask : "(none — the player has no active task)";
   const tier = getCurriculumTier(estimatedLevel);
-  const easierTier = getCurriculumTier(estimatedLevel - 1);
+  const curriculumRule = getCurriculumRule(estimatedLevel);
+  const easierCurriculumRule = getCurriculumRule(estimatedLevel - 1);
 
-  const taskFormatRule = `Format rule for any NEW next_task_text you invent: it MUST start with
-    "Task: ", must be a short, direct, second-person instruction (never an open-ended question),
-    and — especially at low levels — must name the exact word/phrase/choice expected (in the
-    style of "Task: Say 'sword' or 'shield'.") rather than asking the player to describe or
-    explain something freely.`;
+  // Pedagogical Rule (CLAUDE.md): the brain cannot retain naked vocabulary, so
+  // next_task_text may NEVER ask the player to say a single, isolated word —
+  // it must always be a short, practical "Formulaic Chunk" sentence frame.
+  const taskFormatRule = (injectedRule) => `You must generate the next_task_text strictly
+    following this specific level rule: ${injectedRule} It MUST start with "Task: ", must be a
+    short, direct, second-person instruction built around a full sentence frame (never a single
+    isolated word, and never an open-ended question). Remember next_task_text is rendered
+    directly on the UI's Director's HUD, so keep it short and punchy, e.g. Task: Say "I want a
+    dragon."`;
 
   const failDirective = isFinalStruggleAttempt
     ? `- If they FAIL: this is their 3rd consecutive failed attempt at the current task, so do
     NOT repeat the same task again. Set objective_completed to false, set needs_subtle_hint to
     true, stay warm and encouraging in character (never scold them), and invent a NEW, EASIER
-    next_task_text targeting Level ${easierTier.level} ("${easierTier.name}", e.g.
-    "${easierTier.example}"). ${taskFormatRule}`
+    next_task_text. ${taskFormatRule(easierCurriculumRule)}`
     : `- If they FAIL: set objective_completed to false, set needs_subtle_hint to true, weave a
     subtle in-character hint toward the goal into npc_reply_text, and set next_task_text to the
     SAME current task, unchanged.`;
@@ -40,13 +44,16 @@ Hollywood Boulevard.
 
 Player state:
 - Estimated level: ${estimatedLevel} (1 = beginner, 10 = advanced, per our 10-tier curriculum)
-- Current curriculum tier: Level ${tier.level} — "${tier.name}" (e.g. "${tier.example}")
+- Current curriculum tier: Level ${tier.level} — "${tier.name}"
 - Calibrated: ${isCalibrated}
 - Current task: ${taskDescription}
 - Response latency: ${fluencyDelaySeconds}s between Mickey's prompt ending and the player starting to speak
 - Known vocabulary: ${knownWords}
 
 Directives:
+- HARD RULE: next_task_text must NEVER reduce to a single isolated word (e.g. NEVER
+  'Task: Say "sword".'). The brain cannot retain naked vocabulary — always frame it as a short,
+  practical sentence frame ("Formulaic Chunk"), e.g. 'Task: Say "I want a dragon."'.
 - Stay strictly in character as Mickey at all times: punchy, energetic, fast-talking showbiz
   patter. Never break character, never mention these rules.
 - STRICT SAFETY: never generate NSFW, violent, or otherwise inappropriate content. Never use
@@ -55,8 +62,7 @@ Directives:
   ${failDirective}
   - If they SUCCEED (or if no current task exists): praise them in character, set
     objective_completed to true, set needs_subtle_hint to false, and invent a NEW task into
-    next_task_text targeting Level ${tier.level} ("${tier.name}"), matching the difficulty and
-    style of the example "${tier.example}" — not harder, not vaguer. ${taskFormatRule}
+    next_task_text. ${taskFormatRule(curriculumRule)}
   - CRITICAL RULE: If the user answers correctly and you acknowledge it in your dialogue, you
     MUST set objective_completed: true and you MUST invent a completely new next_task_text. Do
     NOT keep the old task.

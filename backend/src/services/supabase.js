@@ -55,25 +55,6 @@ async function ensureDemoUser(userId) {
   });
 }
 
-// Fetches the user's estimated_level and known vocabulary words, used to
-// inject {user.estimated_level} and {vocabulary_memory.words} into Mickey's
-// system prompt per CLAUDE.md.
-async function getUserContext(userId) {
-  await ensureDemoUser(userId);
-
-  const [users, vocab] = await Promise.all([
-    supabaseRequest(`users?id=eq.${userId}&select=estimated_level`),
-    supabaseRequest(
-      `vocabulary_memory?user_id=eq.${userId}&select=word&order=encounter_count.desc&limit=50`
-    ),
-  ]);
-
-  return {
-    estimatedLevel: users[0]?.estimated_level ?? 1,
-    vocabularyWords: vocab.map((row) => row.word),
-  };
-}
-
 // Fetches full quest-engine user state (xp, level, calibration flag, active
 // task) plus known vocabulary. Returns null if no user row exists for
 // userId. Used by the /api/chat route to validate/log state ahead of the
@@ -151,13 +132,16 @@ async function recordVocabulary({ userId, words }) {
   }
 }
 
-// Fetches the user's persisted XP total (used to initialize the frontend's
-// XPProgressBar on mount).
+// Fetches the user's persisted XP total and level (used to initialize the
+// frontend's XPProgressBar on mount).
 async function getUserXp(userId) {
   await ensureDemoUser(userId);
 
-  const users = await supabaseRequest(`users?id=eq.${userId}&select=xp`);
-  return users[0]?.xp ?? 0;
+  const users = await supabaseRequest(`users?id=eq.${userId}&select=xp,estimated_level`);
+  return {
+    xp: users[0]?.xp ?? 0,
+    level: users[0]?.estimated_level ?? 1,
+  };
 }
 
 // Atomically increments the user's XP via the increment_user_xp() RPC
@@ -173,8 +157,6 @@ async function incrementUserXp(userId, amount) {
 }
 
 module.exports = {
-  DEMO_USER_ID,
-  getUserContext,
   getUserQuestState,
   updateUserQuestState,
   saveConversationTurn,
